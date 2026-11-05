@@ -1,0 +1,4 @@
+{
+    "managers": ["manager@example.com"],
+    "include": ["octocat"]
+}

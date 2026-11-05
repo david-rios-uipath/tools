@@ -1,0 +1,5 @@
+# Local only: credentials and team details never leave this machine
+.env
+team-mapping.json
+team-mapping.local.json
+__pycache__/

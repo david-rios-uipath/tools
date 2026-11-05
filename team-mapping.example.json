@@ -1,0 +1,10 @@
+[
+    {
+        "githubLogin": "octocat",
+        "manager": "manager@example.com"
+    },
+    {
+        "githubLogin": "hubot",
+        "manager": "manager@example.com"
+    }
+]
