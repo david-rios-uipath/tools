@@ -5,6 +5,7 @@ Small personal tools for day-to-day dev work. Each folder is self-contained and 
 | Folder | What it is |
 | --- | --- |
 | [`swiftbar/`](swiftbar/) | macOS menu bar plugins for [SwiftBar](https://github.com/swiftbar/SwiftBar) |
+| [`gh-stack-share/`](gh-stack-share/) | Chrome extension adding a share button to GitHub's stacked-PR modal |
 
 ## Local config stays local
 
