@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Which VM is each e2e-failure-investigator run on right now.
+
+Usage: e2e-vms [--all]   (--all also shows the last finished jobs)
+Needs `uip` signed in to the staging profile (`uip login --profile staging`).
+"""
+import base64, json, re, subprocess, sys
+
+FOLDER, PROFILE = "e2e-investigator", "staging"
+
+
+def uip(*args):
+    out = subprocess.run(["uip", "or", "jobs", *args, "--folder-path", FOLDER, "--profile", PROFILE,
+                          "--output", "json"], capture_output=True, text=True).stdout
+    data = json.loads(out[out.find("{"):])
+    if data.get("Result") != "Success":
+        sys.exit(f"uip: {data.get('Message')} {data.get('Instructions', '')}")
+    return data["Data"]
+
+
+def describe(job):
+    """runId from the bootstrap script (only `jobs get` returns it), phase from the flow's element token."""
+    args = uip("get", job["Key"]).get("InputArguments") or ""
+    run = re.search(r"[a-z0-9-]+-\d{8}-\d{6}-[a-z0-9]{4}", args)
+    fps = base64.b64decode((job.get("FpsContext") or "") + "==").decode("utf8", "ignore")
+    phase = re.search(r"BpmnGenericWorkflow/(\w+)", fps)
+    # A probe-phase.sh job is started by hand, so it has no flow element.
+    return (run.group(0) if run else "?"), (phase.group(1) if phase else "probe")
+
+
+def main():
+    states = ["Running", "Pending"] + (["Successful", "Faulted"] if "--all" in sys.argv else [])
+    jobs = [j for s in states
+            for j in uip("list", "--state", s, "--process-name", "vm-exec-vm", "--all-fields", "--limit", "20")]
+    if not jobs:
+        print("no investigator jobs running or pending")
+        return
+    rows = [("VM", "STATE", "STARTED", "PHASE", "RUN", "JOB")]
+    for j in sorted(jobs, key=lambda j: j.get("StartTime") or "9"):
+        run, phase = describe(j)
+        rows.append((j.get("HostMachineName") or "-", j["State"], (j.get("StartTime") or "")[11:16] or "-",
+                     phase, run, j["Key"][:8]))
+    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    for r in rows:
+        print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
+
+
+if __name__ == "__main__":
+    main()
