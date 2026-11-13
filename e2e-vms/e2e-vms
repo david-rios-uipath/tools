@@ -70,6 +70,27 @@ def main():
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     for r in rows:
         print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
+    print_tail_help(rows)
+
+
+# PowerShell for the VM: follow the newest Claude transcript of $run, text and tool calls only.
+TAIL = r"""$f = Get-ChildItem "C:\vm-agent\notes\$run\claude-*.jsonl" | Sort-Object LastWriteTime | Select-Object -Last 1
+Get-Content -Wait -Tail 200 $f.FullName | % {
+  try { $e = $_ | ConvertFrom-Json } catch { return }
+  if ($e.type -eq 'assistant') { foreach ($c in $e.message.content) {
+    if ($c.type -eq 'text') { "TEXT: $($c.text)" }
+    elseif ($c.type -eq 'tool_use') { "TOOL: $($c.name) $($c.input | ConvertTo-Json -Compress)" } } } }"""
+
+
+def print_tail_help(rows):
+    runs = [r for r in rows[1:] if r[0] != "-" and r[6] != "?"]
+    if not runs:
+        return
+    print("\nTo view agent output in a VM, RDP to its IP, open PowerShell, set $run:")
+    for r in runs:
+        print(f"  {r[1]} ({r[2]}):  $run = '{r[6]}'")
+    print("then run (no transcript yet = the phase has not reached Claude, or never does: repro, pr, report):\n")
+    print(TAIL)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@ VM0000000000A1  investigator-0  192.0.2.10  Running  15:01    investigate  some-
 VM0000000000B2  investigator-2  192.0.2.12  Running  15:09    fixVerify    other-spec-20260101-120001-ef01        5e6f7a8b
 ```
 
+- Under the table it prints a PowerShell block per VM that follows that run's newest Claude
+  transcript (text and tool calls only). Paste it in the VM after RDP.
 - `--all` adds recently finished jobs.
 - Needs `uip` signed in to the `staging` profile: `uip login --profile staging`.
 - `PHASE` is `probe` for jobs started by `probe-phase.sh`, which have no flow step.
