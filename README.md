@@ -6,6 +6,7 @@ Small personal tools for day-to-day dev work. Each folder is self-contained and 
 | --- | --- |
 | [`swiftbar/`](swiftbar/) | macOS menu bar plugins for [SwiftBar](https://github.com/swiftbar/SwiftBar) |
 | [`gh-stack-share/`](gh-stack-share/) | Chrome extension adding a share button to GitHub's stacked-PR modal |
+| [`e2e-vms/`](e2e-vms/) | Which staging VM each e2e-failure-investigator run is on right now |
 
 ## Local config stays local
 
