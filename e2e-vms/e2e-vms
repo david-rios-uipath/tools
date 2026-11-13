@@ -4,7 +4,7 @@
 Usage: e2e-vms [--all]   (--all also shows the last finished jobs)
 Needs `uip` signed in to the staging profile (`uip login --profile staging`).
 """
-import base64, json, re, subprocess, sys
+import base64, json, re, subprocess, sys, urllib.request
 
 FOLDER, PROFILE = "e2e-investigator", "staging"
 
@@ -16,6 +16,31 @@ def uip(*args):
     if data.get("Result") != "Success":
         sys.exit(f"uip: {data.get('Message')} {data.get('Instructions', '')}")
     return data["Data"]
+
+
+def vm_addresses():
+    """HostMachineName -> (alias, public IP), from the cloud-robot pool behind each session's machine."""
+    out = subprocess.run(["uip", "login", "refresh", "--profile", PROFILE, "--output", "json"],
+                         capture_output=True, text=True).stdout
+    auth = json.loads(out[out.find("{"):])
+    auth = auth.get("Data", auth)
+    base = f"{auth['BaseUrl'].rstrip('/')}/{auth['OrganizationName']}/{auth['TenantName']}/orchestrator_/odata"
+    out = subprocess.run(["uip", "or", "sessions", "unattended", "list", "--folder-path", FOLDER, "--profile", PROFILE,
+                          "--output", "json"], capture_output=True, text=True).stdout
+    templates = {x["MachineId"] for x in json.loads(out[out.find("{"):]).get("Data", [])}
+    vms = {}
+    for t in templates:
+        # Cloudflare answers Python's default User-Agent with 403 "error code: 1010".
+        req = urllib.request.Request(f"{base}/CloudTemplates({t})/UiPath.Server.Configuration.OData.Machines?$top=100",
+                                     headers={"Authorization": "Bearer " + auth["AccessToken"], "User-Agent": "e2e-vms/1.0"})
+        try:
+            machines = json.load(urllib.request.urlopen(req))["value"]
+        except Exception as e:  # not a cloud-robot pool, or no access: names only
+            print(f"note: no addresses for machine {t}: {e}", file=sys.stderr)
+            continue
+        for m in machines:
+            vms[m["HostMachineName"]] = (m.get("Alias") or "-", m.get("IpAddress") or "-")
+    return vms
 
 
 def describe(job):
@@ -35,10 +60,12 @@ def main():
     if not jobs:
         print("no investigator jobs running or pending")
         return
-    rows = [("VM", "STATE", "STARTED", "PHASE", "RUN", "JOB")]
+    vms = vm_addresses()
+    rows = [("VM", "ALIAS", "IP", "STATE", "STARTED", "PHASE", "RUN", "JOB")]
     for j in sorted(jobs, key=lambda j: j.get("StartTime") or "9"):
         run, phase = describe(j)
-        rows.append((j.get("HostMachineName") or "-", j["State"], (j.get("StartTime") or "")[11:16] or "-",
+        host = j.get("HostMachineName") or "-"
+        rows.append((host, *vms.get(host, ("-", "-")), j["State"], (j.get("StartTime") or "")[11:16] or "-",
                      phase, run, j["Key"][:8]))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     for r in rows:
