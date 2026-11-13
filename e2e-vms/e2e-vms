@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Which VM is each e2e-failure-investigator run on right now.
 
-Usage: e2e-vms [--all]   (--all also shows the last finished jobs)
+Usage: e2e-vms [--all] [--list]
+  --all   also show the last finished jobs
+  --list  print the table only, no VM picker
+Picking a VM copies the transcript-tail command to the clipboard and opens RDP to it in Windows App.
 Needs `uip` signed in to the staging profile (`uip login --profile staging`).
 """
-import base64, json, re, subprocess, sys, urllib.request
+import base64, json, os, re, shutil, subprocess, sys, tempfile, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 FOLDER, PROFILE = "e2e-investigator", "staging"
 
@@ -60,17 +64,21 @@ def main():
     if not jobs:
         print("no investigator jobs running or pending")
         return
-    vms = vm_addresses()
+    jobs.sort(key=lambda j: j.get("StartTime") or "9")
+    with ThreadPoolExecutor(8) as pool:  # one `uip jobs get` per job; sequential took ~30s
+        vms = pool.submit(vm_addresses)
+        described = list(pool.map(describe, jobs))
+        vms = vms.result()
     rows = [("VM", "ALIAS", "IP", "STATE", "STARTED", "PHASE", "RUN", "JOB")]
-    for j in sorted(jobs, key=lambda j: j.get("StartTime") or "9"):
-        run, phase = describe(j)
+    for j, (run, phase) in zip(jobs, described):
         host = j.get("HostMachineName") or "-"
         rows.append((host, *vms.get(host, ("-", "-")), j["State"], (j.get("StartTime") or "")[11:16] or "-",
                      phase, run, j["Key"][:8]))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     for r in rows:
         print("  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip())
-    print_tail_help(rows)
+    if "--list" not in sys.argv and sys.stdin.isatty():
+        pick(rows[1:])
 
 
 # PowerShell for the VM: follow the newest Claude transcript of $run, text and tool calls only.
@@ -82,15 +90,37 @@ Get-Content -Wait -Tail 200 $f.FullName | % {
     elseif ($c.type -eq 'tool_use') { "TOOL: $($c.name) $($c.input | ConvertTo-Json -Compress)" } } } }"""
 
 
-def print_tail_help(rows):
-    runs = [r for r in rows[1:] if r[0] != "-" and r[6] != "?"]
-    if not runs:
+def pick(rows):
+    """Choose a VM (its latest run), copy the tail command, open RDP."""
+    latest = {r[0]: r for r in rows if r[0] != "-" and r[6] != "?"}  # rows are oldest first
+    if not latest:
         return
-    print("\nTo view agent output in a VM, RDP to its IP, open PowerShell, set $run:")
-    for r in runs:
-        print(f"  {r[1]} ({r[2]}):  $run = '{r[6]}'")
-    print("then run (no transcript yet = the phase has not reached Claude, or never does: repro, pr, report):\n")
-    print(TAIL)
+    lines = [f"{r[1]}  {r[3]:<10} {r[5]:<12} {r[6]}" for r in latest.values()]
+    if shutil.which("fzf"):
+        out = subprocess.run(["fzf", "--height=~10", "--reverse", "--prompt=VM> "],
+                             input="\n".join(lines), capture_output=True, text=True).stdout.strip()
+        if not out:
+            return
+        r = list(latest.values())[lines.index(out)]
+    else:
+        print()
+        for i, line in enumerate(lines):
+            print(f"  {i + 1}) {line}")
+        choice = input("VM number (enter to skip): ").strip()
+        if not choice.isdigit() or not 0 < int(choice) <= len(lines):
+            return
+        r = list(latest.values())[int(choice) - 1]
+    subprocess.run(["pbcopy"], input=f"$run = '{r[6]}'\n{TAIL}\n", text=True)
+    print(f"\nCopied the tail command for {r[6]}. Paste it into PowerShell on {r[1]}.")
+    if r[2] == "-":
+        print("No IP for this VM, so no RDP.")
+        return
+    # Windows App opens .rdp files; clipboard redirection lets the paste reach the VM.
+    rdp = os.path.join(tempfile.gettempdir(), f"e2e-vms-{r[1]}.rdp")
+    with open(rdp, "w") as f:
+        f.write(f"full address:s:{r[2]}\nredirectclipboard:i:1\n")
+    subprocess.run(["open", rdp])
+    print(f"Opening RDP to {r[1]} ({r[2]}).")
 
 
 if __name__ == "__main__":

@@ -10,9 +10,10 @@ VM0000000000A1  investigator-0  192.0.2.10  Running  15:01    investigate  some-
 VM0000000000B2  investigator-2  192.0.2.12  Running  15:09    fixVerify    other-spec-20260101-120001-ef01        5e6f7a8b
 ```
 
-- Under the table it prints a PowerShell block per VM that follows that run's newest Claude
-  transcript (text and tool calls only). Paste it in the VM after RDP.
-- `--all` adds recently finished jobs.
+- Under the table it asks you to pick a VM (fzf, or a numbered list without it). Picking one:
+  - copies a PowerShell block that follows that VM's latest run's newest Claude transcript (text and tool calls only)
+  - opens RDP to the VM in Windows App, with clipboard sharing on. Paste the block into PowerShell there.
+- `--all` adds recently finished jobs. `--list` prints the table only.
 - Needs `uip` signed in to the `staging` profile: `uip login --profile staging`.
 - `PHASE` is `probe` for jobs started by `probe-phase.sh`, which have no flow step.
 - `IP` is the VM's public address, read from the cloud-robot pool. RDP only accepts the access IP set on the
