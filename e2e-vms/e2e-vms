@@ -5,6 +5,7 @@ Usage: e2e-vms [--all] [--list]
   --all   also show the last finished jobs
   --list  print the table only, no VM picker
 Picking a VM copies the transcript-tail command to the clipboard and opens RDP to it in Windows App.
+VM login: VM_USER / VM_PASSWORD in .env next to this script (see .env.example).
 Needs `uip` signed in to the staging profile (`uip login --profile staging`).
 """
 import base64, json, os, re, shutil, subprocess, sys, tempfile, urllib.request
@@ -110,18 +111,40 @@ def pick(rows):
         if not choice.isdigit() or not 0 < int(choice) <= len(lines):
             return
         r = list(latest.values())[int(choice) - 1]
-    subprocess.run(["pbcopy"], input=f"$run = '{r[6]}'\n{TAIL}\n", text=True)
-    print(f"\nCopied the tail command for {r[6]}. Paste it into PowerShell on {r[1]}.")
+    tail = f"$run = '{r[6]}'\n{TAIL}\n"
     if r[2] == "-":
-        print("No IP for this VM, so no RDP.")
+        copy(tail)
+        print(f"\nNo IP for {r[1]}, so no RDP. Copied the tail command for {r[6]}.")
         return
+    env = load_env()
     # Windows App opens .rdp files; clipboard redirection lets the paste reach the VM.
     rdp = os.path.join(tempfile.gettempdir(), f"e2e-vms-{r[1]}.rdp")
     with open(rdp, "w") as f:
         f.write(f"full address:s:{r[2]}\nredirectclipboard:i:1\n")
+        if env.get("VM_USER"):
+            f.write(f"username:s:{env['VM_USER']}\n")
+    if env.get("VM_PASSWORD"):  # .rdp files can't hold a password on macOS: paste it at the prompt
+        copy(env["VM_PASSWORD"])
     subprocess.run(["open", "-a", "Windows App", rdp])  # the .rdp default handler may be another app
-    print(f"Opening RDP to {r[1]} ({r[2]}).")
+    print(f"\nOpening RDP to {r[1]} ({r[2]}).")
+    if env.get("VM_PASSWORD"):
+        input("Password copied: paste it into Windows App, then press Enter here to copy the tail command.")
+    copy(tail)
+    print(f"Copied the tail command for {r[6]}. Paste it into PowerShell on {r[1]}.")
 
+
+def copy(text):
+    subprocess.run(["pbcopy"], input=text, text=True)
+
+
+def load_env():
+    """VM_USER / VM_PASSWORD from the gitignored .env next to this script."""
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), ".env")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        pairs = (line.split("=", 1) for line in f if "=" in line and not line.lstrip().startswith("#"))
+        return {k.strip(): v.strip().strip("'\"") for k, v in pairs}
 
 if __name__ == "__main__":
     main()
